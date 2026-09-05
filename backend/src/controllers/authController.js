@@ -1,6 +1,7 @@
 const pool = require("../config/db");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
 
 function generateToken(user) {
     return jwt.sign(
@@ -300,8 +301,6 @@ async function patientRegister(req, res) {
         });
     }
 }
-const crypto = require("crypto");
-const nodemailer = require("nodemailer");
 
 function generateOtp() {
     return crypto.randomInt(100000, 1000000).toString();
@@ -389,22 +388,66 @@ async function sendResetOtp(req, res) {
             [user.id, otpHash]
         );
 
-        const transporter = nodemailer.createTransport({
-            host: process.env.EMAIL_HOST,
-            port: Number(process.env.EMAIL_PORT || 587),
-            secure: Number(process.env.EMAIL_PORT) === 465,
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_PASSWORD
-            }
-        });
+        const brevoResponse = await fetch(
+            "https://api.brevo.com/v3/smtp/email",
+            {
+                method: "POST",
+                headers: {
+                    accept: "application/json",
+                    "api-key": process.env.BREVO_API_KEY,
+                    "content-type": "application/json"
+                },
+                body: JSON.stringify({
+                    sender: {
+                        name: process.env.EMAIL_FROM_NAME || "MediSync",
+                        email: process.env.EMAIL_FROM
+                    },
+                    to: [
+                        {
+                            email: recoveryEmail
+                        }
+                    ],
+                    subject: "MediSync Password Reset OTP",
+                    htmlContent: `
+                        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 30px; border: 1px solid #e5e7eb; border-radius: 12px;">
+                            <h2 style="color: #1e3a8a;">MediSync Password Reset</h2>
 
-        await transporter.sendMail({
-            from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
-            to: recoveryEmail,
-            subject: "MediSync Password Reset OTP",
-            text: `Your MediSync password reset OTP is ${otp}. It expires in 10 minutes.`
-        });
+                            <p>Hello,</p>
+
+                            <p>We received a request to reset your MediSync password.</p>
+
+                            <p>Your OTP is:</p>
+
+                            <div style="font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #1e3a8a; padding: 15px 0;">
+                                ${otp}
+                            </div>
+
+                            <p>This OTP will expire in <strong>10 minutes</strong>.</p>
+
+                            <p>If you did not request a password reset, please ignore this email.</p>
+
+                            <p style="color: #6b7280; font-size: 13px;">
+                                This is an automated email from MediSync. Please do not reply.
+                            </p>
+                        </div>
+                    `
+                })
+            }
+        );
+
+        if (!brevoResponse.ok) {
+            const brevoError = await brevoResponse.text();
+
+            console.error(
+                "Brevo email error:",
+                brevoResponse.status,
+                brevoError
+            );
+
+            return res.status(500).json({
+                message: "Failed to send password reset OTP."
+            });
+        }
 
         res.json({
             success: true,
@@ -419,7 +462,6 @@ async function sendResetOtp(req, res) {
         });
     }
 }
-
 
 async function verifyResetOtp(req, res) {
     try {
@@ -523,7 +565,6 @@ async function verifyResetOtp(req, res) {
     }
 }
 
-
 async function resetPassword(req, res) {
     try {
         const { role, email, hospitalCode, otp, newPassword } = req.body;
@@ -622,6 +663,7 @@ async function resetPassword(req, res) {
         });
     }
 }
+
 module.exports = {
     hospitalLogin,
     managerLogin,
