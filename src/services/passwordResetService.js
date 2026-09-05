@@ -1,4 +1,4 @@
-const API_URL = "http://localhost:5000/api";
+import API_URL from "@/api/config";
 
 async function apiRequest(url, options = {}) {
     const response = await fetch(`${API_URL}${url}`, {

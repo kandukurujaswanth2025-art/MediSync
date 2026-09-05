@@ -12,7 +12,7 @@ import { PageHeader, SectionCard, EmptyState } from "@/components/ui-kit";
 import StatusBadge from "@/components/StatusBadge";
 import { cn } from "@/lib/utils";
 
-const API_URL = "http://localhost:5000/api";
+import API_URL from "@/api/config";
 
 const SUGGESTIONS = [
   "Headache",

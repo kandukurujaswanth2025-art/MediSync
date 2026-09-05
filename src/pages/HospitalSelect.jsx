@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Building2, ArrowRight, Activity } from "lucide-react";
 import { useAppAuth } from "@/lib/AppAuthContext";
 
-const API_URL = "http://localhost:5000/api";
+import API_URL from "@/api/config";
 
 export default function HospitalSelect() {
   const { session, selectHospital } = useAppAuth();

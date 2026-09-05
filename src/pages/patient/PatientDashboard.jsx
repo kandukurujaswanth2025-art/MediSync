@@ -20,7 +20,7 @@ import {
 import { SectionCard, EmptyState, LoadingState } from "@/components/ui-kit";
 import StatusBadge from "@/components/StatusBadge";
 
-const API_URL = "http://localhost:5000/api";
+import API_URL from "@/api/config";
 
 export default function PatientDashboard() {
   const { session, selectedHospitalId } = useAppAuth();

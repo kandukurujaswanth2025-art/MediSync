@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import ChromaGrid from "@/components/ChromaGrid";
 
-const API_URL = "http://localhost:5000/api";
+import API_URL from "@/api/config";
 
 export default function Landing() {
   const [hospitals, setHospitals] = useState([]);

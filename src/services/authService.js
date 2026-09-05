@@ -1,4 +1,4 @@
-const API_URL = "http://localhost:5000/api";
+import API_URL from "@/api/config";
 
 function saveSession(session) {
     localStorage.setItem("medisync_session", JSON.stringify(session));
