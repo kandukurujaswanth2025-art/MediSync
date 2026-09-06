@@ -4,7 +4,8 @@ const {
     searchMedicines,
     createPrescription,
     getPrescription,
-    getMyPrescriptions
+    getMyPrescriptions,
+    deletePrescription
 } = require("../controllers/medicineController");
 
 const {
@@ -12,27 +13,53 @@ const {
     authorizeRoles
 } = require("../middleware/authMiddleware");
 
-const router = express.Router();
+const router =
+    express.Router();
 
-router.use(authenticateToken);
+router.use(
+    authenticateToken
+);
+
+// ============================================================
+// MEDICINE SEARCH
+// ============================================================
 
 router.get(
     "/search",
-    authorizeRoles("HOSPITAL", "RESOURCE_MANAGER"),
+    authorizeRoles(
+        "HOSPITAL",
+        "RESOURCE_MANAGER"
+    ),
     searchMedicines
 );
 
+// ============================================================
+// CREATE PRESCRIPTION
+// ============================================================
+
 router.post(
     "/prescriptions",
-    authorizeRoles("HOSPITAL"),
+    authorizeRoles(
+        "HOSPITAL"
+    ),
     createPrescription
 );
 
+// ============================================================
+// PATIENT PRESCRIPTIONS
+// ============================================================
+
 router.get(
     "/prescriptions/my",
-    authorizeRoles("PATIENT"),
+    authorizeRoles(
+        "PATIENT"
+    ),
     getMyPrescriptions
 );
+
+// ============================================================
+// SINGLE PRESCRIPTION
+// ============================================================
 
 router.get(
     "/prescriptions/:orderId",
@@ -44,4 +71,19 @@ router.get(
     getPrescription
 );
 
-module.exports = router;
+// ============================================================
+// DELETE PRESCRIPTION
+// Only the patient who owns the prescription
+// can delete it.
+// ============================================================
+
+router.delete(
+    "/prescriptions/:orderId",
+    authorizeRoles(
+        "PATIENT"
+    ),
+    deletePrescription
+);
+
+module.exports =
+    router;

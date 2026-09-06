@@ -1,5 +1,9 @@
 const pool = require("../config/db");
 
+// ============================================================
+// DEPARTMENTS
+// ============================================================
+
 async function getDepartments(req, res) {
     try {
         const hospitalId = req.user.hospitalId;
@@ -150,7 +154,8 @@ async function deleteDepartment(req, res) {
 
         if (Number(resourceCheck.rows[0].count) > 0) {
             return res.status(400).json({
-                message: "Cannot delete department while resources are assigned to it"
+                message:
+                    "Cannot delete department while resources are assigned to it"
             });
         }
 
@@ -180,10 +185,58 @@ async function deleteDepartment(req, res) {
     }
 }
 
+// ============================================================
+// RESOURCES
+// ============================================================
+
 async function getResources(req, res) {
     try {
         const hospitalId = req.user.hospitalId;
 
+        /*
+         * The frontend sends:
+         *
+         * /resources?type=medicine
+         * /resources?type=equipment
+         *
+         * Previously the backend ignored this parameter,
+         * which caused medicines and equipment to be mixed.
+         */
+        const requestedType = String(
+            req.query.type || ""
+        ).toLowerCase();
+
+        if (
+            requestedType &&
+            !["medicine", "equipment"].includes(
+                requestedType
+            )
+        ) {
+            return res.status(400).json({
+                message: "Invalid resource type"
+            });
+        }
+
+        const queryParams = [hospitalId];
+
+        let typeCondition = "";
+
+        if (requestedType) {
+            queryParams.push(requestedType);
+            typeCondition = `AND type = $2`;
+        }
+
+        /*
+         * Medicine status is calculated directly from:
+         *
+         * quantity >= min_stock  -> AVAILABLE
+         * quantity <  min_stock  -> OUT_OF_STOCK
+         *
+         * Equipment keeps its own status such as:
+         * AVAILABLE
+         * UNDER_MAINTENANCE
+         * OUT_OF_SERVICE
+         */
         const result = await pool.query(
             `SELECT
                 id,
@@ -195,12 +248,21 @@ async function getResources(req, res) {
                 quantity,
                 min_stock,
                 unit,
-                status,
+                CASE
+                    WHEN type = 'medicine'
+                        THEN CASE
+                            WHEN quantity >= min_stock
+                                THEN 'AVAILABLE'
+                            ELSE 'OUT_OF_STOCK'
+                        END
+                    ELSE status
+                END AS status,
                 last_updated
              FROM resources
              WHERE hospital_id = $1
+             ${typeCondition}
              ORDER BY id`,
-            [hospitalId]
+            queryParams
         );
 
         res.json(result.rows);
@@ -219,11 +281,33 @@ async function getResourceById(req, res) {
         const hospitalId = req.user.hospitalId;
 
         const result = await pool.query(
-            `SELECT *
+            `SELECT
+                id,
+                hospital_id,
+                department_id,
+                department_name,
+                type,
+                name,
+                quantity,
+                min_stock,
+                unit,
+                CASE
+                    WHEN type = 'medicine'
+                        THEN CASE
+                            WHEN quantity >= min_stock
+                                THEN 'AVAILABLE'
+                            ELSE 'OUT_OF_STOCK'
+                        END
+                    ELSE status
+                END AS status,
+                last_updated
              FROM resources
              WHERE id = $1
              AND hospital_id = $2`,
-            [id, hospitalId]
+            [
+                id,
+                hospitalId
+            ]
         );
 
         if (result.rows.length === 0) {
@@ -242,10 +326,16 @@ async function getResourceById(req, res) {
     }
 }
 
+// ============================================================
+// MEDICINE SEARCH
+// ============================================================
+
 async function searchMedicines(req, res) {
     try {
         const hospitalId = req.user.hospitalId;
-        const search = String(req.query.search || "").trim();
+        const search = String(
+            req.query.search || ""
+        ).trim();
 
         const result = await pool.query(
             `SELECT
@@ -258,25 +348,39 @@ async function searchMedicines(req, res) {
                 quantity,
                 min_stock,
                 unit,
-                status,
+                CASE
+                    WHEN quantity >= min_stock
+                        THEN 'AVAILABLE'
+                    ELSE 'OUT_OF_STOCK'
+                END AS status,
                 last_updated
              FROM resources
              WHERE hospital_id = $1
              AND type = 'medicine'
              AND name ILIKE $2
              ORDER BY name`,
-            [hospitalId, `%${search}%`]
+            [
+                hospitalId,
+                `%${search}%`
+            ]
         );
 
         res.json(result.rows);
     } catch (error) {
-        console.error("Search medicines error:", error);
+        console.error(
+            "Search medicines error:",
+            error
+        );
 
         res.status(500).json({
             message: "Failed to search medicines"
         });
     }
 }
+
+// ============================================================
+// CREATE RESOURCE
+// ============================================================
 
 async function createResource(req, res) {
     try {
@@ -295,19 +399,44 @@ async function createResource(req, res) {
 
         if (!name || !type) {
             return res.status(400).json({
-                message: "Resource name and type are required"
+                message:
+                    "Resource name and type are required"
             });
         }
 
-        if (!["medicine", "equipment"].includes(type)) {
+        if (
+            !["medicine", "equipment"].includes(type)
+        ) {
             return res.status(400).json({
-                message: "Invalid resource type"
+                message:
+                    "Invalid resource type"
             });
         }
 
-        const prefix = type === "medicine" ? "MED" : "EQP";
+        const numericQuantity =
+            Number(quantity) || 0;
 
-        const id = `${hospitalId}-${prefix}-${Date.now()}`;
+        const numericMinStock =
+            Number(minStock) || 0;
+
+        /*
+         * Medicine status is NEVER manually controlled.
+         * It is always calculated from quantity/minStock.
+         */
+        const finalStatus =
+            type === "medicine"
+                ? numericQuantity >= numericMinStock
+                    ? "AVAILABLE"
+                    : "OUT_OF_STOCK"
+                : status || "AVAILABLE";
+
+        const prefix =
+            type === "medicine"
+                ? "MED"
+                : "EQP";
+
+        const id =
+            `${hospitalId}-${prefix}-${Date.now()}`;
 
         const result = await pool.query(
             `INSERT INTO resources
@@ -337,22 +466,32 @@ async function createResource(req, res) {
                 departmentName || null,
                 type,
                 name,
-                quantity || 0,
-                minStock || 0,
+                numericQuantity,
+                numericMinStock,
                 unit || "units",
-                status || "AVAILABLE"
+                finalStatus
             ]
         );
 
-        res.status(201).json(result.rows[0]);
+        res.status(201).json(
+            result.rows[0]
+        );
     } catch (error) {
-        console.error("Create resource error:", error);
+        console.error(
+            "Create resource error:",
+            error
+        );
 
         res.status(500).json({
-            message: "Failed to create resource"
+            message:
+                "Failed to create resource"
         });
     }
 }
+
+// ============================================================
+// UPDATE RESOURCE
+// ============================================================
 
 async function updateResource(req, res) {
     try {
@@ -369,16 +508,87 @@ async function updateResource(req, res) {
             status
         } = req.body;
 
+        /*
+         * First get the existing resource so we know
+         * whether it is medicine or equipment.
+         */
+        const existingResult =
+            await pool.query(
+                `SELECT
+                    id,
+                    type,
+                    quantity,
+                    min_stock,
+                    status
+                 FROM resources
+                 WHERE id = $1
+                 AND hospital_id = $2`,
+                [
+                    id,
+                    hospitalId
+                ]
+            );
+
+        if (
+            existingResult.rows.length === 0
+        ) {
+            return res.status(404).json({
+                message:
+                    "Resource not found"
+            });
+        }
+
+        const existing =
+            existingResult.rows[0];
+
+        /*
+         * Use the new values when supplied.
+         * Otherwise keep the existing values.
+         */
+        const finalQuantity =
+            quantity !== undefined &&
+            quantity !== null
+                ? Number(quantity)
+                : Number(existing.quantity);
+
+        const finalMinStock =
+            minStock !== undefined &&
+            minStock !== null
+                ? Number(minStock)
+                : Number(existing.min_stock);
+
+        let finalStatus;
+
+        if (existing.type === "medicine") {
+            /*
+             * Medicine:
+             *
+             * quantity >= minStock -> AVAILABLE
+             * quantity < minStock  -> OUT_OF_STOCK
+             */
+            finalStatus =
+                finalQuantity >= finalMinStock
+                    ? "AVAILABLE"
+                    : "OUT_OF_STOCK";
+        } else {
+            /*
+             * Equipment keeps its manually selected
+             * operational status.
+             */
+            finalStatus =
+                status || existing.status;
+        }
+
         const result = await pool.query(
             `UPDATE resources
              SET
                 department_id = COALESCE($1, department_id),
                 department_name = COALESCE($2, department_name),
                 name = COALESCE($3, name),
-                quantity = COALESCE($4, quantity),
-                min_stock = COALESCE($5, min_stock),
+                quantity = $4,
+                min_stock = $5,
                 unit = COALESCE($6, unit),
-                status = COALESCE($7, status),
+                status = $7,
                 last_updated = NOW()
              WHERE id = $8
              AND hospital_id = $9
@@ -387,30 +597,34 @@ async function updateResource(req, res) {
                 departmentId || null,
                 departmentName || null,
                 name || null,
-                quantity ?? null,
-                minStock ?? null,
+                finalQuantity,
+                finalMinStock,
                 unit || null,
-                status || null,
+                finalStatus,
                 id,
                 hospitalId
             ]
         );
 
-        if (result.rows.length === 0) {
-            return res.status(404).json({
-                message: "Resource not found"
-            });
-        }
-
-        res.json(result.rows[0]);
+        res.json(
+            result.rows[0]
+        );
     } catch (error) {
-        console.error("Update resource error:", error);
+        console.error(
+            "Update resource error:",
+            error
+        );
 
         res.status(500).json({
-            message: "Failed to update resource"
+            message:
+                "Failed to update resource"
         });
     }
 }
+
+// ============================================================
+// DELETE RESOURCE
+// ============================================================
 
 async function deleteResource(req, res) {
     try {
@@ -422,26 +636,42 @@ async function deleteResource(req, res) {
              WHERE id = $1
              AND hospital_id = $2
              RETURNING id`,
-            [id, hospitalId]
+            [
+                id,
+                hospitalId
+            ]
         );
 
-        if (result.rows.length === 0) {
+        if (
+            result.rows.length === 0
+        ) {
             return res.status(404).json({
-                message: "Resource not found"
+                message:
+                    "Resource not found"
             });
         }
 
         res.json({
-            message: "Resource deleted successfully"
+            message:
+                "Resource deleted successfully"
         });
     } catch (error) {
-        console.error("Delete resource error:", error);
+        console.error(
+            "Delete resource error:",
+            error
+        );
 
         res.status(500).json({
-            message: "Failed to delete resource"
+            message:
+                "Failed to delete resource"
         });
     }
 }
+
+// ============================================================
+// STOCK HISTORY
+// ============================================================
+
 async function getStockHistory(req, res) {
     try {
         const hospitalId = req.user.hospitalId;
@@ -462,25 +692,35 @@ async function getStockHistory(req, res) {
         );
 
         res.json(result.rows);
-
     } catch (error) {
-        console.error("Stock history error:", error);
+        console.error(
+            "Stock history error:",
+            error
+        );
 
         res.status(500).json({
-            message: "Failed to fetch stock history"
+            message:
+                "Failed to fetch stock history"
         });
     }
 }
+
+// ============================================================
+// EXPORTS
+// ============================================================
+
 module.exports = {
     getDepartments,
     getDepartmentById,
     createDepartment,
     updateDepartment,
     deleteDepartment,
+
     getResources,
     getStockHistory,
     getResourceById,
     searchMedicines,
+
     createResource,
     updateResource,
     deleteResource

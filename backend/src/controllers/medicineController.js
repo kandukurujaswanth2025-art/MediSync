@@ -1,9 +1,15 @@
 const pool = require("../config/db");
 
+// ============================================================
+// SEARCH MEDICINES
+// ============================================================
+
 async function searchMedicines(req, res) {
     try {
         const hospitalId = req.user.hospitalId;
-        const search = String(req.query.search || "").trim();
+        const search = String(
+            req.query.search || ""
+        ).trim();
 
         const result = await pool.query(
             `SELECT
@@ -23,12 +29,19 @@ async function searchMedicines(req, res) {
              AND type = 'medicine'
              AND name ILIKE $2
              ORDER BY name`,
-            [hospitalId, `%${search}%`]
+            [
+                hospitalId,
+                `%${search}%`
+            ]
         );
 
         res.json(result.rows);
+
     } catch (error) {
-        console.error("Search medicines error:", error);
+        console.error(
+            "Search medicines error:",
+            error
+        );
 
         res.status(500).json({
             message: "Failed to search medicines"
@@ -36,11 +49,16 @@ async function searchMedicines(req, res) {
     }
 }
 
+// ============================================================
+// CREATE PRESCRIPTION
+// ============================================================
+
 async function createPrescription(req, res) {
     const client = await pool.connect();
 
     try {
-        const hospitalId = req.user.hospitalId;
+        const hospitalId =
+            req.user.hospitalId;
 
         const {
             queueEntryId,
@@ -52,122 +70,174 @@ async function createPrescription(req, res) {
         if (
             !queueEntryId ||
             !patientName ||
-            !Array.isArray(items) ||
-            items.length === 0
+            !Array.isArray(items)
         ) {
             return res.status(400).json({
-                message: "Queue entry, patient name and medicines are required"
+                message:
+                    "Queue entry, patient name and a valid medicine list are required"
             });
         }
 
-        const queueResult = await client.query(
-            `SELECT *
-             FROM queue_entries
-             WHERE id = $1
-             AND hospital_id = $2`,
-            [queueEntryId, hospitalId]
-        );
+        const queueResult =
+            await client.query(
+                `SELECT *
+                 FROM queue_entries
+                 WHERE id = $1
+                 AND hospital_id = $2`,
+                [
+                    queueEntryId,
+                    hospitalId
+                ]
+            );
 
-        if (queueResult.rows.length === 0) {
+        if (
+            queueResult.rows.length === 0
+        ) {
             return res.status(404).json({
-                message: "Queue entry not found"
+                message:
+                    "Queue entry not found"
             });
         }
 
-        const queueEntry = queueResult.rows[0];
+        const queueEntry =
+            queueResult.rows[0];
 
         await client.query("BEGIN");
 
         const medicineDetails = [];
 
         for (const item of items) {
-            if (!item.medicineId || !item.quantity) {
-                await client.query("ROLLBACK");
+
+            if (
+                !item.medicineId ||
+                !item.quantity
+            ) {
+                await client.query(
+                    "ROLLBACK"
+                );
 
                 return res.status(400).json({
-                    message: "Each medicine must have an ID and quantity"
+                    message:
+                        "Each medicine must have an ID and quantity"
                 });
             }
 
-            const quantity = Number(item.quantity);
+            const quantity =
+                Number(item.quantity);
 
-            if (!Number.isInteger(quantity) || quantity <= 0) {
-                await client.query("ROLLBACK");
+            if (
+                !Number.isInteger(
+                    quantity
+                ) ||
+                quantity <= 0
+            ) {
+                await client.query(
+                    "ROLLBACK"
+                );
 
                 return res.status(400).json({
-                    message: "Medicine quantity must be a positive integer"
+                    message:
+                        "Medicine quantity must be a positive integer"
                 });
             }
 
-            const medicineResult = await client.query(
-                `SELECT *
-                 FROM resources
-                 WHERE id = $1
-                 AND hospital_id = $2
-                 AND type = 'medicine'
-                 FOR UPDATE`,
-                [item.medicineId, hospitalId]
-            );
+            const medicineResult =
+                await client.query(
+                    `SELECT *
+                     FROM resources
+                     WHERE id = $1
+                     AND hospital_id = $2
+                     AND type = 'medicine'
+                     FOR UPDATE`,
+                    [
+                        item.medicineId,
+                        hospitalId
+                    ]
+                );
 
-            if (medicineResult.rows.length === 0) {
-                await client.query("ROLLBACK");
+            if (
+                medicineResult.rows.length ===
+                0
+            ) {
+                await client.query(
+                    "ROLLBACK"
+                );
 
                 return res.status(404).json({
-                    message: `Medicine ${item.medicineId} not found`
+                    message:
+                        `Medicine ${item.medicineId} not found`
                 });
             }
 
-            const medicine = medicineResult.rows[0];
+            const medicine =
+                medicineResult.rows[0];
 
-            if (medicine.quantity < quantity) {
-                await client.query("ROLLBACK");
+            if (
+                medicine.quantity <
+                quantity
+            ) {
+                await client.query(
+                    "ROLLBACK"
+                );
 
                 return res.status(400).json({
-                    message: `Insufficient stock for ${medicine.name}. Available: ${medicine.quantity}`
+                    message:
+                        `Insufficient stock for ${medicine.name}. Available: ${medicine.quantity}`
                 });
             }
 
             medicineDetails.push({
-                medicineId: medicine.id,
-                medicineName: medicine.name,
+                medicineId:
+                    medicine.id,
+
+                medicineName:
+                    medicine.name,
+
                 quantity
             });
         }
 
-        const orderId = `MO${Date.now()}`;
+        const orderId =
+            `MO${Date.now()}`;
 
-        const orderResult = await client.query(
-            `INSERT INTO medicine_orders
-            (
-                id,
-                hospital_id,
-                patient_id,
-                patient_name,
-                queue_entry_id,
-                status,
-                created_at
-            )
-            VALUES
-            (
-                $1,
-                $2,
-                $3,
-                $4,
-                $5,
-                'READY_FOR_COLLECTION',
-                NOW()
-            )
-            RETURNING *`,
-            [
-                orderId,
-                hospitalId,
-                patientId || queueEntry.patient_id || null,
-                patientName,
-                queueEntryId
-            ]
-        );
+        const orderResult =
+            await client.query(
+                `INSERT INTO medicine_orders
+                (
+                    id,
+                    hospital_id,
+                    patient_id,
+                    patient_name,
+                    queue_entry_id,
+                    status,
+                    created_at
+                )
+                VALUES
+                (
+                    $1,
+                    $2,
+                    $3,
+                    $4,
+                    $5,
+                    'READY_FOR_COLLECTION',
+                    NOW()
+                )
+                RETURNING *`,
+                [
+                    orderId,
+                    hospitalId,
+                    patientId ||
+                        queueEntry.patient_id ||
+                        null,
+                    patientName,
+                    queueEntryId
+                ]
+            );
 
-        for (const medicine of medicineDetails) {
+        for (
+            const medicine of medicineDetails
+        ) {
+
             await client.query(
                 `INSERT INTO medicine_order_items
                 (
@@ -226,7 +296,9 @@ async function createPrescription(req, res) {
                     NOW()
                 )`,
                 [
-                    `SH${Date.now()}${Math.floor(Math.random() * 1000)}`,
+                    `SH${Date.now()}${Math.floor(
+                        Math.random() * 1000
+                    )}`,
                     hospitalId,
                     medicine.medicineId,
                     medicine.medicineName,
@@ -249,6 +321,7 @@ async function createPrescription(req, res) {
         );
 
         if (queueEntry.patient_id) {
+
             await client.query(
                 `INSERT INTO notifications
                 (
@@ -273,7 +346,9 @@ async function createPrescription(req, res) {
                     NOW()
                 )`,
                 [
-                    `NT${Date.now()}${Math.floor(Math.random() * 1000)}`,
+                    `NT${Date.now()}${Math.floor(
+                        Math.random() * 1000
+                    )}`,
                     hospitalId,
                     queueEntry.patient_id,
                     "Prescription Ready",
@@ -282,15 +357,26 @@ async function createPrescription(req, res) {
             );
         }
 
-        await client.query("COMMIT");
+        await client.query(
+            "COMMIT"
+        );
 
         res.status(201).json({
-            message: "Prescription created successfully",
-            order: orderResult.rows[0],
-            items: medicineDetails
+            message:
+                "Prescription created successfully",
+
+            order:
+                orderResult.rows[0],
+
+            items:
+                medicineDetails
         });
+
     } catch (error) {
-        await client.query("ROLLBACK");
+
+        await client.query(
+            "ROLLBACK"
+        );
 
         console.error(
             "Create prescription error:",
@@ -298,156 +384,441 @@ async function createPrescription(req, res) {
         );
 
         res.status(500).json({
-            message: "Failed to create prescription"
+            message:
+                "Failed to create prescription"
         });
+
     } finally {
         client.release();
     }
 }
 
-async function getPrescription(req, res) {
+// ============================================================
+// GET SINGLE PRESCRIPTION
+// ============================================================
+
+async function getPrescription(
+    req,
+    res
+) {
     try {
-        const { orderId } = req.params;
+        const { orderId } =
+            req.params;
 
         let result;
 
-        if (req.user.role === "PATIENT") {
-            result = await pool.query(
-                `SELECT
-                    mo.id,
-                    mo.hospital_id,
-                    mo.patient_id,
-                    mo.patient_name,
-                    mo.queue_entry_id,
-                    mo.status,
-                    mo.created_at,
-                    moi.medicine_id,
-                    moi.medicine_name,
-                    moi.quantity
-                 FROM medicine_orders mo
-                 JOIN medicine_order_items moi
-                    ON mo.id = moi.order_id
-                 WHERE mo.id = $1
-                 AND mo.patient_id = $2
-                 ORDER BY moi.medicine_name`,
-                [
-                    orderId,
-                    req.user.userId
-                ]
-            );
+        if (
+            req.user.role ===
+            "PATIENT"
+        ) {
+
+            result =
+                await pool.query(
+                    `SELECT
+                        mo.id,
+                        mo.hospital_id,
+                        mo.patient_id,
+                        mo.patient_name,
+                        mo.queue_entry_id,
+                        qe.token,
+
+                        mo.status,
+
+                        /*
+                         * The database timestamp is treated
+                         * as UTC and explicitly marked with Z.
+                         * The browser will convert it to the
+                         * patient's local timezone.
+                         */
+                        to_char(
+                            mo.created_at,
+                            'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
+                        ) AS created_at,
+
+                        moi.medicine_id,
+                        moi.medicine_name,
+                        moi.quantity
+
+                     FROM medicine_orders mo
+
+                     LEFT JOIN queue_entries qe
+                        ON qe.id =
+                           mo.queue_entry_id
+
+                     LEFT JOIN medicine_order_items moi
+                        ON mo.id =
+                           moi.order_id
+
+                     WHERE mo.id = $1
+                     AND mo.patient_id = $2
+
+                     ORDER BY
+                        moi.medicine_name`,
+                    [
+                        orderId,
+                        req.user.userId
+                    ]
+                );
+
         } else {
-            result = await pool.query(
-                `SELECT
-                    mo.id,
-                    mo.hospital_id,
-                    mo.patient_id,
-                    mo.patient_name,
-                    mo.queue_entry_id,
-                    mo.status,
-                    mo.created_at,
-                    moi.medicine_id,
-                    moi.medicine_name,
-                    moi.quantity
-                 FROM medicine_orders mo
-                 JOIN medicine_order_items moi
-                    ON mo.id = moi.order_id
-                 WHERE mo.id = $1
-                 AND mo.hospital_id = $2
-                 ORDER BY moi.medicine_name`,
-                [
-                    orderId,
-                    req.user.hospitalId
-                ]
-            );
+
+            result =
+                await pool.query(
+                    `SELECT
+                        mo.id,
+                        mo.hospital_id,
+                        mo.patient_id,
+                        mo.patient_name,
+                        mo.queue_entry_id,
+                        qe.token,
+
+                        mo.status,
+
+                        to_char(
+                            mo.created_at,
+                            'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
+                        ) AS created_at,
+
+                        moi.medicine_id,
+                        moi.medicine_name,
+                        moi.quantity
+
+                     FROM medicine_orders mo
+
+                     LEFT JOIN queue_entries qe
+                        ON qe.id =
+                           mo.queue_entry_id
+
+                     LEFT JOIN medicine_order_items moi
+                        ON mo.id =
+                           moi.order_id
+
+                     WHERE mo.id = $1
+                     AND mo.hospital_id = $2
+
+                     ORDER BY
+                        moi.medicine_name`,
+                    [
+                        orderId,
+                        req.user.hospitalId
+                    ]
+                );
         }
 
-        if (result.rows.length === 0) {
+        if (
+            result.rows.length ===
+            0
+        ) {
             return res.status(404).json({
-                message: "Prescription not found"
+                message:
+                    "Prescription not found"
             });
         }
 
-        const first = result.rows[0];
+        const first =
+            result.rows[0];
 
         res.json({
             id: first.id,
-            hospitalId: first.hospital_id,
-            patientId: first.patient_id,
-            patientName: first.patient_name,
-            queueEntryId: first.queue_entry_id,
-            status: first.status,
-            createdAt: first.created_at,
-            items: result.rows.map(row => ({
-                medicineId: row.medicine_id,
-                medicineName: row.medicine_name,
-                quantity: row.quantity
-            }))
+
+            hospitalId:
+                first.hospital_id,
+
+            patientId:
+                first.patient_id,
+
+            patientName:
+                first.patient_name,
+
+            queueEntryId:
+                first.queue_entry_id,
+
+            token:
+                first.token,
+
+            status:
+                first.status,
+
+            createdAt:
+                first.created_at,
+
+            items:
+                result.rows
+                    .filter(
+                        (row) =>
+                            row.medicine_id
+                    )
+                    .map(
+                        (row) => ({
+                            medicineId:
+                                row.medicine_id,
+
+                            medicineName:
+                                row.medicine_name,
+
+                            quantity:
+                                Number(
+                                    row.quantity
+                                )
+                        })
+                    )
         });
+
     } catch (error) {
+
         console.error(
             "Get prescription error:",
             error
         );
 
         res.status(500).json({
-            message: "Failed to fetch prescription"
+            message:
+                "Failed to fetch prescription"
         });
     }
 }
 
-async function getMyPrescriptions(req, res) {
+// ============================================================
+// GET MY PRESCRIPTIONS
+// ============================================================
+
+async function getMyPrescriptions(
+    req,
+    res
+) {
     try {
-        const result = await pool.query(
-            `SELECT
-                mo.id,
-                mo.hospital_id,
-                mo.patient_id,
-                mo.patient_name,
-                mo.queue_entry_id,
-                mo.status,
-                mo.created_at,
-                COALESCE(
-                    json_agg(
-                        json_build_object(
-                            'medicineId', moi.medicine_id,
-                            'medicineName', moi.medicine_name,
-                            'quantity', moi.quantity
+
+        const result =
+            await pool.query(
+                `SELECT
+                    mo.id,
+                    mo.hospital_id,
+                    mo.patient_id,
+                    mo.patient_name,
+                    mo.queue_entry_id,
+
+                    qe.token,
+
+                    mo.status,
+
+                    /*
+                     * Explicitly mark database time as UTC.
+                     * The frontend will convert this to IST.
+                     */
+                    to_char(
+                        mo.created_at,
+                        'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
+                    ) AS created_at,
+
+                    COALESCE(
+                        json_agg(
+                            json_build_object(
+                                'medicineId',
+                                moi.medicine_id,
+
+                                'medicineName',
+                                moi.medicine_name,
+
+                                'quantity',
+                                moi.quantity
+                            )
                         )
-                    ) FILTER (WHERE moi.id IS NOT NULL),
-                    '[]'
-                ) AS items
-             FROM medicine_orders mo
-             LEFT JOIN medicine_order_items moi
-                ON mo.id = moi.order_id
-             WHERE mo.patient_id = $1
-             GROUP BY
-                mo.id,
-                mo.hospital_id,
-                mo.patient_id,
-                mo.patient_name,
-                mo.queue_entry_id,
-                mo.status,
-                mo.created_at
-             ORDER BY mo.created_at DESC`,
-            [req.user.userId]
+                        FILTER (
+                            WHERE
+                                moi.id IS NOT NULL
+                        ),
+                        '[]'
+                    ) AS items
+
+                 FROM medicine_orders mo
+
+                 LEFT JOIN queue_entries qe
+                    ON qe.id =
+                       mo.queue_entry_id
+
+                 LEFT JOIN medicine_order_items moi
+                    ON mo.id =
+                       moi.order_id
+
+                 WHERE mo.patient_id = $1
+
+                 GROUP BY
+                    mo.id,
+                    mo.hospital_id,
+                    mo.patient_id,
+                    mo.patient_name,
+                    mo.queue_entry_id,
+                    qe.token,
+                    mo.status,
+                    mo.created_at
+
+                 ORDER BY
+                    mo.created_at DESC`,
+                [
+                    req.user.userId
+                ]
+            );
+
+        res.json(
+            result.rows
         );
 
-        res.json(result.rows);
     } catch (error) {
+
         console.error(
             "Get my prescriptions error:",
             error
         );
 
         res.status(500).json({
-            message: "Failed to fetch prescriptions"
+            message:
+                "Failed to fetch prescriptions"
         });
     }
 }
+
+// ============================================================
+// DELETE PRESCRIPTION
+// ============================================================
+
+async function deletePrescription(
+    req,
+    res
+) {
+    const client =
+        await pool.connect();
+
+    try {
+        const {
+            orderId
+        } = req.params;
+
+        const patientId =
+            req.user.userId;
+
+        await client.query(
+            "BEGIN"
+        );
+
+        /*
+         * First verify that this prescription
+         * belongs to the logged-in patient.
+         */
+        const orderResult =
+            await client.query(
+                `SELECT
+                    id,
+                    queue_entry_id,
+                    hospital_id
+                 FROM medicine_orders
+                 WHERE id = $1
+                 AND patient_id = $2
+                 FOR UPDATE`,
+                [
+                    orderId,
+                    patientId
+                ]
+            );
+
+        if (
+            orderResult.rows.length ===
+            0
+        ) {
+            await client.query(
+                "ROLLBACK"
+            );
+
+            return res.status(404).json({
+                message:
+                    "Prescription not found"
+            });
+        }
+
+        const order =
+            orderResult.rows[0];
+
+        /*
+         * Remove the medicine items first.
+         */
+        await client.query(
+            `DELETE FROM medicine_order_items
+             WHERE order_id = $1`,
+            [
+                orderId
+            ]
+        );
+
+        /*
+         * Clear the prescription reference
+         * from the queue entry.
+         */
+        if (
+            order.queue_entry_id
+        ) {
+            await client.query(
+                `UPDATE queue_entries
+                 SET medicine_order_id = NULL
+                 WHERE id = $1
+                 AND hospital_id = $2`,
+                [
+                    order.queue_entry_id,
+                    order.hospital_id
+                ]
+            );
+        }
+
+        /*
+         * Delete the prescription itself.
+         */
+        await client.query(
+            `DELETE FROM medicine_orders
+             WHERE id = $1
+             AND patient_id = $2`,
+            [
+                orderId,
+                patientId
+            ]
+        );
+
+        await client.query(
+            "COMMIT"
+        );
+
+        res.json({
+            message:
+                "Prescription deleted successfully",
+            id: orderId
+        });
+
+    } catch (error) {
+
+        await client.query(
+            "ROLLBACK"
+        );
+
+        console.error(
+            "Delete prescription error:",
+            error
+        );
+
+        res.status(500).json({
+            message:
+                "Failed to delete prescription"
+        });
+
+    } finally {
+        client.release();
+    }
+}
+
+// ============================================================
+// EXPORTS
+// ============================================================
 
 module.exports = {
     searchMedicines,
     createPrescription,
     getPrescription,
-    getMyPrescriptions
+    getMyPrescriptions,
+    deletePrescription
 };
