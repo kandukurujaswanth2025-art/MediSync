@@ -1,3 +1,4 @@
+
 const jwt = require("jsonwebtoken");
 
 function authenticateToken(req, res, next) {
@@ -17,8 +18,14 @@ function authenticateToken(req, res, next) {
             process.env.JWT_SECRET
         );
 
-        req.user = decoded;
+        // MFA challenge tokens cannot access protected APIs.
+        if (decoded.purpose === "mfa_challenge") {
+            return res.status(401).json({
+                message: "Complete MFA verification before accessing this resource"
+            });
+        }
 
+        req.user = decoded;
         next();
     } catch (error) {
         return res.status(401).json({
