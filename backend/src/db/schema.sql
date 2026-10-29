@@ -22,6 +22,10 @@ CREATE TABLE IF NOT EXISTS users (
     recovery_email VARCHAR(150),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
+    mfa_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    mfa_secret TEXT,
+    mfa_pending_secret TEXT,
+
     CONSTRAINT fk_user_hospital
         FOREIGN KEY (hospital_id)
         REFERENCES hospitals(id)
@@ -279,7 +283,6 @@ CREATE INDEX IF NOT EXISTS idx_queue_status
 
 CREATE INDEX IF NOT EXISTS idx_orders_patient
     ON medicine_orders(patient_id);
-
 CREATE INDEX IF NOT EXISTS idx_requests_hospital
     ON resource_requests(hospital_id);
 

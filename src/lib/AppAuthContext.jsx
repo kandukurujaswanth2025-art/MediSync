@@ -26,6 +26,12 @@ export function AppAuthProvider({ children }) {
 
   const handleLogin = useCallback(async (fn, ...args) => {
     const s = await fn(...args);
+
+    // MFA challenge is not an authenticated session.
+    if (s?.mfaRequired) {
+      return s;
+    }
+
     setSession(s);
     return s;
   }, []);

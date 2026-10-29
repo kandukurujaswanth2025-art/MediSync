@@ -30,3 +30,9 @@ dist-ssr
 .env
 .vite
 base44/.app.jsonc
+
+# Local MFA prototype secrets and artifacts
+mfa-test-qr.png
+backend/src/config/mfaTestDb.js
+backend/src/controllers/mfaTestController.js
+backend/src/mfaTestServer.js

@@ -20,6 +20,7 @@ function getSession() {
         : null;
 }
 
+
 async function apiRequest(
     url,
     options = {}
@@ -27,27 +28,25 @@ async function apiRequest(
     const response = await fetch(
         `${API_URL}${url}`,
         {
+            ...options,
             headers: {
-                "Content-Type":
-                    "application/json",
+                "Content-Type": "application/json",
                 ...(options.headers || {})
-            },
-            ...options
+            }
         }
     );
 
-    const data =
-        await response.json();
+    const data = await response.json();
 
     if (!response.ok) {
         throw new Error(
-            data.message ||
-            "Request failed"
+            data.message || "Request failed"
         );
     }
 
     return data;
 }
+
 
 // --------------------------------------------------
 // HOSPITAL LOGIN
@@ -89,6 +88,11 @@ export async function loginHospital(
 // RESOURCE MANAGER LOGIN
 // --------------------------------------------------
 
+
+ // --------------------------------------------------
+// RESOURCE MANAGER LOGIN + MFA
+// --------------------------------------------------
+
 export async function loginResourceManager(
     hospitalCode,
     password
@@ -104,10 +108,19 @@ export async function loginResourceManager(
         }
     );
 
+    // If MFA is enabled, do NOT save a session yet.
+    if (data.mfaRequired) {
+        return {
+            mfaRequired: true,
+            challengeToken: data.challengeToken,
+            message: data.message
+        };
+    }
+
+    // Normal login when MFA is not enabled.
     const session = {
         role: "manager",
-        hospitalId:
-            data.user.hospitalId,
+        hospitalId: data.user.hospitalId,
         hospitalCode,
         name: data.user.name,
         email: data.user.email,
@@ -119,6 +132,46 @@ export async function loginResourceManager(
 
     return session;
 }
+
+// --------------------------------------------------
+// VERIFY RESOURCE MANAGER MFA
+// --------------------------------------------------
+
+export async function verifyManagerMfa(
+    challengeToken,
+    code,
+    hospitalCode
+) {
+    const data = await apiRequest(
+        "/auth/manager/verify-mfa",
+        {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${challengeToken}`
+            },
+            body: JSON.stringify({
+                challengeToken,
+                code
+            })
+        }
+    );
+
+    // Save a full session only after successful verification.
+    const session = {
+        role: "manager",
+        hospitalId: data.user.hospitalId,
+        hospitalCode,
+        name: data.user.name,
+        email: data.user.email,
+        userId: data.user.id,
+        token: data.token
+    };
+
+    saveSession(session);
+
+    return session;
+}
+
 
 // --------------------------------------------------
 // PATIENT LOGIN
