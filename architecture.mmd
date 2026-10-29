@@ -1,0 +1,28 @@
+
+flowchart TD
+    U["MediSync Users"]
+    LB["Nginx Load Balancer"]
+
+    B1["Backend 1 - Express"]
+    B2["Backend 2 - Express"]
+    B3["Backend 3 - Express"]
+
+    DB[("Neon PostgreSQL")]
+
+    U --> LB
+    LB --> B1
+    LB --> B2
+    LB --> B3
+
+    B1 --> DB
+    B2 --> DB
+    B3 --> DB
+
+    AUTO["Autoscaling Policy"]
+    BURST["Cloud Bursting Capacity<br/>Temporary Backend Instances"]
+
+    LB -. "Proposed scale-out" .-> BURST
+    AUTO --> BURST
+
+    classDef proposed fill:#fff0d9,stroke:#d97706,stroke-width:2px
+    class AUTO,BURST proposed

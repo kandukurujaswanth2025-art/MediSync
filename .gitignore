@@ -36,3 +36,8 @@ mfa-test-qr.png
 backend/src/config/mfaTestDb.js
 backend/src/controllers/mfaTestController.js
 backend/src/mfaTestServer.js
+
+# Phase 8: local Docker and Trivy evidence archives
+.trivy-cache/
+medisync-before.tar
+medisync-after.tar
