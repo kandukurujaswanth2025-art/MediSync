@@ -1,13 +1,28 @@
 
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { Boxes, Eye, EyeOff, ShieldCheck, ArrowLeft } from "lucide-react";
-import AuthShell, { Field, Input, FormError } from "@/components/AuthShell";
+import {
+  Boxes,
+  Eye,
+  EyeOff,
+  ShieldCheck,
+  ArrowLeft
+} from "lucide-react";
+
+import AuthShell, {
+  Field,
+  Input,
+  FormError
+} from "@/components/AuthShell";
+
 import { useAppAuth } from "@/lib/AppAuthContext";
-import { verifyManagerMfa } from "@/services/authService";
 
 export default function ResourceManagerLogin() {
-  const { loginResourceManager } = useAppAuth();
+  const {
+    loginResourceManager,
+    verifyManagerMfa
+  } = useAppAuth();
+
   const navigate = useNavigate();
 
   const [code, setCode] = useState("");
@@ -20,6 +35,7 @@ export default function ResourceManagerLogin() {
 
   const mfaRequired = Boolean(challengeToken);
 
+  // Step 1: Verify Resource Manager credentials.
   const submit = async (e) => {
     e.preventDefault();
     setError("");
@@ -38,7 +54,7 @@ export default function ResourceManagerLogin() {
         return;
       }
 
-      navigate("/manager");
+      navigate("/manager", { replace: true });
     } catch (err) {
       setError(err.message || "Login failed");
     } finally {
@@ -46,12 +62,15 @@ export default function ResourceManagerLogin() {
     }
   };
 
+  // Step 2: Verify MFA and synchronize the authenticated session.
   const verifyMfa = async (e) => {
     e.preventDefault();
     setError("");
 
     if (!/^\d{6}$/.test(mfaCode)) {
-      setError("Enter the six-digit code from your authenticator app.");
+      setError(
+        "Enter the six-digit code from your authenticator app."
+      );
       return;
     }
 
@@ -64,7 +83,8 @@ export default function ResourceManagerLogin() {
         code.trim()
       );
 
-      navigate("/manager");
+      // The context handler updates session state before this navigation.
+      navigate("/manager", { replace: true });
     } catch (err) {
       setError(err.message || "MFA verification failed");
     } finally {
@@ -75,12 +95,17 @@ export default function ResourceManagerLogin() {
   const backToLogin = () => {
     setChallengeToken("");
     setMfaCode("");
+    setPassword("");
     setError("");
   };
 
   return (
     <AuthShell
-      title={mfaRequired ? "Verify Your Identity" : "Resource Manager Login"}
+      title={
+        mfaRequired
+          ? "Verify Your Identity"
+          : "Resource Manager Login"
+      }
       subtitle={
         mfaRequired
           ? "Enter the six-digit code from your authenticator app."
@@ -100,7 +125,10 @@ export default function ResourceManagerLogin() {
     >
       {mfaRequired ? (
         <form onSubmit={verifyMfa} className="space-y-4">
-          <Field label="Authenticator Code" hint="Enter the current six-digit code">
+          <Field
+            label="Authenticator Code"
+            hint="Enter the current six-digit code"
+          >
             <Input
               required
               type="text"
@@ -109,7 +137,9 @@ export default function ResourceManagerLogin() {
               maxLength={6}
               value={mfaCode}
               onChange={(e) =>
-                setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                setMfaCode(
+                  e.target.value.replace(/\D/g, "").slice(0, 6)
+                )
               }
               placeholder="123456"
               className="font-mono tracking-widest"
@@ -143,7 +173,9 @@ export default function ResourceManagerLogin() {
             <Input
               required
               value={code}
-              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              onChange={(e) =>
+                setCode(e.target.value.toUpperCase())
+              }
               placeholder="HOSP001"
               className="font-mono"
             />
@@ -164,6 +196,7 @@ export default function ResourceManagerLogin() {
                 type="button"
                 onClick={() => setShow((s) => !s)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                aria-label={show ? "Hide password" : "Show password"}
               >
                 {show ? (
                   <EyeOff className="h-4 w-4" />

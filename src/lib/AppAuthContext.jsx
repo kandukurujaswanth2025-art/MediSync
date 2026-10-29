@@ -1,3 +1,4 @@
+
 import React, {
   createContext,
   useContext,
@@ -12,7 +13,8 @@ import {
   loginHospital,
   loginResourceManager,
   loginPatient,
-  registerPatient
+  registerPatient,
+  verifyManagerMfa
 } from "@/services/authService";
 
 const AppAuthContext = createContext(null);
@@ -24,17 +26,35 @@ export function AppAuthProvider({ children }) {
     setSession(currentSession());
   }, []);
 
+  // Handle normal login and MFA challenges.
   const handleLogin = useCallback(async (fn, ...args) => {
-    const s = await fn(...args);
+    const result = await fn(...args);
 
-    // MFA challenge is not an authenticated session.
-    if (s?.mfaRequired) {
-      return s;
+    // An MFA challenge is not an authenticated session.
+    if (result?.mfaRequired) {
+      return result;
     }
 
-    setSession(s);
-    return s;
+    setSession(result);
+    return result;
   }, []);
+
+  // Complete Resource Manager login after MFA verification.
+  const handleVerifyManagerMfa = useCallback(
+    async (challengeToken, code, hospitalCode) => {
+      const verifiedSession = await verifyManagerMfa(
+        challengeToken,
+        code,
+        hospitalCode
+      );
+
+      // Synchronize React context with the newly authenticated session.
+      setSession(verifiedSession);
+
+      return verifiedSession;
+    },
+    []
+  );
 
   const value = {
     session,
@@ -61,6 +81,10 @@ export function AppAuthProvider({ children }) {
 
     loginResourceManager: (...args) =>
       handleLogin(loginResourceManager, ...args),
+
+    // Use this context method for MFA verification.
+    verifyManagerMfa: (...args) =>
+      handleVerifyManagerMfa(...args),
 
     loginPatient: (...args) =>
       handleLogin(loginPatient, ...args),
